@@ -2,12 +2,12 @@
 LUMI 딥러닝 학습 데이터셋 자동 판별 및 라벨링 빌더 (dsbuilder_v1.py)
 =============================================================================
 [역할 및 목적]
-1. 지정된 데이터셋 폴더(기본: C:\\LUMI\\영상\\PSE_triggering_dataset) 내의 모든 동영상 파일을
-   탐색합니다. (하위 'out' 폴더는 자동 제외하며, 파일명 숫자 순서대로 자연 정렬)
+1. 지정된 데이터셋 폴더 내의 모든 동영상 파일을
+   탐색합니다.
 2. 핵심 판별 엔진(vdcoreops_v1.py)을 호출하여 영상별 5대 위험 트리거
    (휘도 플래시, 적색 플래시, 지속 플래시, 줄무늬 패턴, 고대비)를 판별합니다.
 3. 딥러닝 모델 학습에 즉시 활용할 수 있도록 두 가지 형태의 라벨링 데이터프레임을 생성하고
-   C:\\LUMI\\StartisHalf\\Dataset 폴더에 CSV(UTF-8-SIG, 엑셀 한글 호환)로 저장합니다.
+   폴더에 CSV(UTF-8-SIG, 엑셀 한글 호환)로 저장합니다.
 
    - [구성 A] pse_video_summary.csv (영상 단위 요약 테이블: 1개 영상 = 1개 Row)
      -> 용도: 영상 전체 위험 여부 이진 분류(Video Classification) 모델 학습 및 전체 데이터셋 Manifest 관리
@@ -49,8 +49,8 @@ if hasattr(sys.stdout, "reconfigure"):
 # =========================================================================
 # 1. 기본 경로 및 데이터셋 구축 설정 (추후 영상 폴더나 설정 추가 시 이 부분만 수정)
 # =========================================================================
-DEFAULT_DATASET_DIR = r"C:\LUMI\영상\PSE_triggering_dataset"
-DEFAULT_OUTPUT_DIR = r"C:\LUMI\StartisHalf\Dataset"
+DEFAULT_DATASET_DIR = r"데이터셋 폴더 경로"
+DEFAULT_OUTPUT_DIR = r"csv 저장 경로"
 
 SUMMARY_CSV_NAME = "pse_video_summary.csv"       # 구성 A 파일명 (영상 단위 요약)
 INTERVAL_CSV_NAME = "pse_interval_details.csv"   # 구성 B 파일명 (구간 단위 상세)

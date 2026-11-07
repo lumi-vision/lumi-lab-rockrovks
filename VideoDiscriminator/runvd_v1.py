@@ -17,9 +17,9 @@ from vdcoreops_v1 import (
 # =========================================================================
 # 기본 실행 설정 (단독 실행 시 아래 설정값이 사용됩니다)
 # =========================================================================
-VIDEO_PATH = r"C:\LUMI\영상\PSE_triggering_dataset\2.mp4"
+VIDEO_PATH = r"영상 파일 위치"
 DEFAULT_DEVICE = "laptop"     # 'laptop' (56.0 cm) 또는 'desktop' (68.0 cm)
-DEFAULT_DISPLAY_AREA = 15     # 디스플레이 대각선 크기 (inch)
+DEFAULT_DISPLAY_AREA = 15.6     # 디스플레이 대각선 크기 (inch)
 
 
 def _display_dataframe(df: pd.DataFrame, title: str | None = None) -> None:
