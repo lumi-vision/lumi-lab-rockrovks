@@ -232,6 +232,7 @@ def dim_video_fullscreen_safe_method_a(
     3) [2패스 저장 및 동시 재검증] alpha_t >= 0.9999인 무보정 프레임은 1패스 측정값을 재사용하고,
        보정된 프레임만 재평가하여 보정 동영상(.mp4)과 검증 결과를 반환합니다.
     """
+    # Safe 버전은 기존 단일 프레임 기준 prob1(%) 로직을 그대로 유지합니다 (apply_temporal_prob1=False)
     analysis = analyze_video_frames(
         video_path=input_video_path,
         device=device,
@@ -239,6 +240,7 @@ def dim_video_fullscreen_safe_method_a(
         max_side=max_side,
         max_safe_gap_ms=max_safe_gap_ms,
         return_physical_stats=True,
+        apply_temporal_prob1=False,
     )
     meta = analysis["meta"]
     proc_w, proc_h = meta["proc_w"], meta["proc_h"]
@@ -335,7 +337,10 @@ def dim_video_fullscreen_safe_method_a(
     writer.release()
 
     dimmed_trigger_intervals, dimmed_trigger_specs = detect_all_trigger_intervals(
-        history=dimmed_history, fps=fps, max_safe_gap_ms=max_safe_gap_ms
+        history=dimmed_history,
+        fps=fps,
+        max_safe_gap_ms=max_safe_gap_ms,
+        apply_temporal_prob1=False,
     )
     df_after = summarize_intervals_to_df(dimmed_trigger_specs, fps=fps)
 

@@ -106,7 +106,7 @@ def plot_and_save_comparison_graph_c(
     ax2 = axes[1]
     ax2.plot(time_sec, orig_prob1, color="#d62728", linewidth=1.5, alpha=0.85, label="보정 전 프레임 최대 위험도 (prob1 %)")
     ax2.plot(time_sec, dim_prob1, color="#1f77b4", linewidth=1.8, label="보정 후 프레임 최대 위험도 (prob1 %)")
-    ax2.axhline(50.0, color="#7f7f7f", linestyle="--", linewidth=1.0, label="단일 프레임 임계점 (50%)")
+    ax2.axhline(50.0, color="#7f7f7f", linestyle="--", linewidth=1.0, label="위험 구간 판정 임계점 (시계열 통합 50%)")
     ax2.set_ylabel("위험도 달성 정도 (%)", fontsize=11, fontweight="bold")
     ax2.set_title("② 보정 전 vs 보정 후 프레임별 최대 위험도 (판정 근거 - 임계치 달성 정도 %)", fontsize=11, fontweight="bold", loc="left")
     ax2.set_ylim(-3.0, 105.0)

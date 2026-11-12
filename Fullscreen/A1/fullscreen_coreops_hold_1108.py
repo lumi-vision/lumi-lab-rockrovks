@@ -230,7 +230,7 @@ def dim_video_fullscreen_hold_method_a(
     fps = meta["fps"]
     cpd_spec = analysis["cpd_spec"]
     scan_lines = analysis["scan_lines"]
-    orig_history = analysis["history"]
+    orig_raw_history = analysis["raw_history"]
     trigger_intervals = analysis["trigger_intervals"]
     orig_trigger_specs = analysis["trigger_specs"]
     orig_frame_stats = analysis["frame_stats"]
@@ -263,7 +263,6 @@ def dim_video_fullscreen_hold_method_a(
         "hc_danger": [], "hc_prob1": [],
     }
     dimmed_frame_stats = []
-    dimmed_max_prob1_per_frame = []
 
     frame_idx = 0
     while True:
@@ -277,13 +276,12 @@ def dim_video_fullscreen_hold_method_a(
         alpha_t = float(alpha_schedule[frame_idx])
 
         # [속도 최적화] 밝기 배율이 100%(>= 0.9999)인 안전 프레임은 원본과 100% 동일하므로
-        # 불필요한 색공간 변환 및 GPU 재평가를 건너뛰고 1패스 결과를 즉시 재사용합니다.
+        # 불필요한 색공간 변환 및 GPU 재평가를 건너뛰고 1패스 단일 프레임 원시 측정값을 즉시 재사용합니다.
         if alpha_t >= 0.9999:
             writer.write(frame_bgr)
             for k in dimmed_history:
-                dimmed_history[k].append(orig_history[k][frame_idx])
+                dimmed_history[k].append(orig_raw_history[k][frame_idx])
             dimmed_frame_stats.append(orig_frame_stats[frame_idx])
-            dimmed_max_prob1_per_frame.append(orig_max_prob1_per_frame[frame_idx])
         else:
             img_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
             rgb_t = torch.from_numpy(img_rgb).to(device=device_t, dtype=torch.float32)
@@ -304,23 +302,30 @@ def dim_video_fullscreen_hold_method_a(
                 dimmed_history[k].append(res_dim[k])
             dimmed_frame_stats.append(res_dim["physical_stats"])
 
-            max_p1_dim = max(
-                res_dim["lum_flash_prob1"],
-                res_dim["red_flash_prob1"],
-                res_dim["sustained_prob1"],
-                res_dim["stripe_prob1"],
-                res_dim["hc_prob1"],
-            )
-            dimmed_max_prob1_per_frame.append(float(max_p1_dim))
-
         frame_idx += 1
 
     cap_in.release()
     writer.release()
 
+    # 보정 후 시계열 위험 구간 재판정 및 시계열 통합 prob1(%) 산출
     dimmed_trigger_intervals, dimmed_trigger_specs = detect_all_trigger_intervals(
-        history=dimmed_history, fps=fps, max_safe_gap_ms=max_safe_gap_ms
+        history=dimmed_history,
+        fps=fps,
+        max_safe_gap_ms=max_safe_gap_ms,
+        apply_temporal_prob1=True,
     )
+    dimmed_max_prob1_per_frame = [
+        float(
+            max(
+                dimmed_history["lum_flash_prob1"][i],
+                dimmed_history["red_flash_prob1"][i],
+                dimmed_history["sustained_prob1"][i],
+                dimmed_history["stripe_prob1"][i],
+                dimmed_history["hc_prob1"][i],
+            )
+        )
+        for i in range(len(dimmed_frame_stats))
+    ]
     df_after = summarize_intervals_to_df(dimmed_trigger_specs, fps=fps)
 
     all_orig_intervals = []

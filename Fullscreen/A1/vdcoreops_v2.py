@@ -264,10 +264,10 @@ def evaluate_single_frame_all_metrics(
         # - 최종적으로 Hill 방정식 형태의 포화 함수 eta^2 / (1 + eta^2) * 100을 적용하면,
         #   정확히 임계치에 도달했을 때(eta = 1.0) 위험도가 50.0%가 되고, 자극이 강해질수록 100%로 부드럽게 수렴합니다.
         lum_gate = float(torch.clamp(rel_ratio_map[high_lum_mask].mean() if high_lum_mask.any() else rel_ratio_map.max(), 0.0, 1.0).item())  # 이 부분 설명 가능하게
-        eta_lum_25 = (high_lum_area / 0.25) * lum_gate
+        eta_lum_25 = max(1.0, (high_lum_area / 0.25) * lum_gate)
         lum_flash_prob1 = (eta_lum_25 ** 2 / (1.0 + eta_lum_25 ** 2)) * 100.0
         if sustained_danger:
-            eta_lum_40 = (high_lum_area / 0.40) * lum_gate
+            eta_lum_40 = max(1.0, (high_lum_area / 0.40) * lum_gate)
             sustained_prob1 = (eta_lum_40 ** 2 / (1.0 + eta_lum_40 ** 2)) * 100.0
         else:
             sustained_prob1 = 0.0
@@ -314,7 +314,7 @@ def evaluate_single_frame_all_metrics(
         if red_flash_danger:
             red_gate = float(torch.clamp(red_ratio[sat_red_mask].mean() / 0.8, 0.0, 1.0).item())
             chroma_gate = min(1.0, delta_uv / 0.2)
-            eta_red_25 = (sat_red_area / 0.25) * red_gate * chroma_gate
+            eta_red_25 = max(1.0, (sat_red_area / 0.25) * red_gate * chroma_gate)
             red_flash_prob1 = (eta_red_25 ** 2 / (1.0 + eta_red_25 ** 2)) * 100.0
         else:
             red_flash_prob1 = 0.0
@@ -341,7 +341,7 @@ def evaluate_single_frame_all_metrics(
     hc_danger = hc_area > 0.40
     if hc_danger:
         hc_gate = float(torch.clamp(contrast_ratio[contrast_mask].mean(), 0.0, 1.0).item())
-        eta_hc_40 = (hc_area / 0.40) * hc_gate
+        eta_hc_40 = max(1.0, (hc_area / 0.40) * hc_gate)
         hc_prob1 = (eta_hc_40 ** 2 / (1.0 + eta_hc_40 ** 2)) * 100.0
     else:
         hc_prob1 = 0.0
@@ -372,7 +372,7 @@ def evaluate_single_frame_all_metrics(
         if stripe_danger:
             mean_contrast_factor = float(torch.clamp(contrast_ratio[pattern_region_mask].mean(), 0.0, 1.0).item())
             pair_factor = min(1.0, max_pairs / 5.0)
-            eta_stripe = (pattern_area / 0.25) * pair_factor * mean_contrast_factor
+            eta_stripe = max(1.0, (pattern_area / 0.25) * pair_factor * mean_contrast_factor)
             stripe_prob1 = (eta_stripe ** 2 / (1.0 + eta_stripe ** 2)) * 100.0
         else:
             stripe_prob1 = 0.0
@@ -451,7 +451,7 @@ def _merge_intervals(intervals: list[tuple[int, int]]) -> list[tuple[int, int]]:
 def detect_flashing_intervals(
     is_danger_list: list[bool],
     fps: float,
-    min_pairs: int = 4,
+    min_pairs: int = 3,
     max_safe_gap_ms: float = 334.0,
     danger_runs: list[tuple[int, int]] | None = None
 ) -> list[tuple[int, int]]:
@@ -460,7 +460,7 @@ def detect_flashing_intervals(
     연속된 위험 프레임 묶음(True)과 직후 이어지는 안전 프레임 묶음(False)을 1개의 '(위험, 안전) 쌍'으로 정의할 때,
     - 위험 프레임 묶음 사이의 안전 프레임 지속 시간(gap_ms = (gap_frames / fps) * 1000)이
       max_safe_gap_ms(334ms) 이상이면 위험하지 않은 깜빡임으로 구분하여 제외하고(< 334ms만 연속 깜빡임으로 인정),
-    - 1초(fps 프레임 길이 창) 안에 이러한 (위험, 안전) 쌍이 min_pairs(4번, > 3Hz) 이상 들어오는 구간을 검출합니다.
+    - 1초(fps 프레임 길이 창) 안에 이러한 (위험, 안전) 쌍이 min_pairs(3번, >= 3Hz) 이상 들어오는 구간을 검출합니다.
     """
     n_frames = len(is_danger_list)
     if danger_runs is None:
@@ -573,21 +573,170 @@ def detect_pattern_or_contrast_intervals(
     return _merge_intervals(sustained_ivs + flash_ivs)
 
 
+def _count_max_valid_flash_pairs_per_run(
+    danger_runs: list[tuple[int, int]],
+    n_frames: int,
+    fps: float,
+    max_pairs_cap: int = 3,
+    max_safe_gap_ms: float = 334.0,
+) -> dict[int, float]:
+    """
+    각 위험 프레임 묶음(run_idx)이 1초(fps) 이내 창에서 max_safe_gap_ms(334ms) 미만의 안전 간격으로
+    최대 몇 회의 연속된 (위험, 안전) 점멸 쌍을 형성했는지 계산합니다.
+    - 1초 이내에 안전 프레임으로 전환되지 못한 긴 단일 묶음은 0.5회로 계산합니다.
+    """
+    run_pair_counts = {idx: 0.5 for idx in range(len(danger_runs))}
+    if not danger_runs:
+        return run_pair_counts
+
+    pairs = []
+    for idx, (d_start, d_end) in enumerate(danger_runs):
+        if d_end + 1 >= n_frames:
+            continue
+        next_d_start = danger_runs[idx + 1][0] if (idx + 1 < len(danger_runs)) else None
+        gap_frames = (next_d_start - d_end - 1) if (next_d_start is not None) else (n_frames - 1 - d_end)
+        gap_ms = (gap_frames / float(fps)) * 1000.0
+        pairs.append({
+            "run_idx": idx,
+            "d_start": d_start,
+            "d_end": d_end,
+            "first_safe_frame": d_end + 1,
+            "gap_to_next_danger_ms": gap_ms,
+        })
+
+    n_p = len(pairs)
+    for start_i in range(n_p):
+        for length in range(1, min(max_pairs_cap, n_p - start_i) + 1):
+            window_pairs = pairs[start_i : start_i + length]
+            gaps_ok = True
+            for p_idx in range(length - 1):
+                if (window_pairs[p_idx + 1]["run_idx"] != window_pairs[p_idx]["run_idx"] + 1) or (
+                    window_pairs[p_idx]["gap_to_next_danger_ms"] >= max_safe_gap_ms
+                ):
+                    gaps_ok = False
+                    break
+            if not gaps_ok:
+                break
+
+            elapsed_sec = (window_pairs[-1]["first_safe_frame"] - window_pairs[0]["d_start"]) / float(fps)
+            if elapsed_sec <= 1.0:
+                for p in window_pairs:
+                    r_idx = p["run_idx"]
+                    if float(length) > run_pair_counts[r_idx]:
+                        run_pair_counts[r_idx] = float(length)
+
+    return run_pair_counts
+
+
+def compute_video_temporal_prob1_series(
+    is_danger_list: list[bool],
+    spatial_prob1_list: list[float],
+    confirmed_intervals: list[tuple[int, int]],
+    fps: float,
+    trigger_type: str,
+    max_safe_gap_ms: float = 334.0,
+) -> list[float]:
+    """
+    [영상 기준 시계열 통합 임계치 달성 정도(prob1 %) 비선형 산출 함수]
+    1. 최종 위험 구간(confirmed_intervals) 내부 프레임:
+       - 공간 조건과 시간 조건(점멸 횟수 또는 최소 지속 시간)을 모두 100% 통과했으므로 항상 50.0% ~ 100.0% 값을 가집니다.
+       - 점멸 위험 구간 내부에서 깜빡임 사이의 짧은 안전(Off) 프레임도 위험 구간의 연속된 일부로서
+         인접한 위험(On) 프레임들의 달성도를 선형 보간하여 50% 이상으로 끊김 없이 유지합니다.
+    2. 최종 위험 구간 외부의 단일 프레임 자극(시간 조건 미달 프레임):
+       - 공간 달성도와 시간 달성률(tau = 실제 점멸 횟수 / 기준 횟수, 또는 실제 지속시간 / 기준 지속시간 < 1.0)을 결합하여
+         eta_video = tau * sqrt(prob1_spatial / 100.0) < 1.0 을 산출하고,
+         Hill 포화 함수 eta_video^2 / (1 + eta_video^2) * 100을 적용해 0% 초과 ~ 50% 미만의 값으로 정규화합니다.
+    """
+    n_frames = len(is_danger_list)
+    if n_frames == 0:
+        return []
+
+    out_prob1 = np.zeros(n_frames, dtype=np.float64)
+    in_confirmed = np.zeros(n_frames, dtype=bool)
+
+    # 1) 최종 확정된 위험 구간 내부: 연속된 >= 50% 달성도 부여 (점멸 Off 프레임 보간 포함)
+    for s_f, e_f in confirmed_intervals:
+        s_c = max(0, min(n_frames - 1, s_f))
+        e_c = max(0, min(n_frames - 1, e_f))
+        in_confirmed[s_c : e_c + 1] = True
+
+        true_idx = [t for t in range(s_c, e_c + 1) if is_danger_list[t]]
+        if true_idx:
+            true_vals = [max(50.0, float(spatial_prob1_list[t])) for t in true_idx]
+            interp_vals = np.interp(np.arange(s_c, e_c + 1, dtype=np.float64), true_idx, true_vals)
+            out_prob1[s_c : e_c + 1] = np.maximum(out_prob1[s_c : e_c + 1], interp_vals)
+        else:
+            out_prob1[s_c : e_c + 1] = np.maximum(out_prob1[s_c : e_c + 1], 50.0)
+
+    # 2) 최종 위험 구간 외부(시간 조건 미달)의 위험 프레임 묶음: 시간 달성률(tau < 1.0) 반영하여 < 50%로 산출
+    danger_runs = _extract_danger_runs(is_danger_list)
+    if not danger_runs:
+        return out_prob1.tolist()
+
+    if trigger_type == "flash_3":
+        pair_counts = _count_max_valid_flash_pairs_per_run(
+            danger_runs, n_frames=n_frames, fps=fps, max_pairs_cap=2, max_safe_gap_ms=max_safe_gap_ms
+        )
+    elif trigger_type == "pattern_or_hc":
+        pair_counts = _count_max_valid_flash_pairs_per_run(
+            danger_runs, n_frames=n_frames, fps=fps, max_pairs_cap=3, max_safe_gap_ms=max_safe_gap_ms
+        )
+    else:
+        pair_counts = {}
+
+    for run_idx, (d_start, d_end) in enumerate(danger_runs):
+        # 묶음 전체가 이미 확정 위험 구간 내부에 속해 있으면 건너뜀
+        if np.all(in_confirmed[d_start : d_end + 1]):
+            continue
+
+        duration_sec = (d_end - d_start + 1) / float(fps)
+        if trigger_type == "flash_3":
+            # 기준: 1초 내 3회 점멸 -> 미달 시 tau = (달성 점멸 수 / 3.0) < 1.0
+            m_pairs = min(2.0, pair_counts.get(run_idx, 0.5))
+            tau_temporal = min(0.95, m_pairs / 3.0)
+        elif trigger_type == "sustained_1s":
+            # 기준: 안전 프레임 전환 후 1.0초 이상 지속
+            if d_start >= 1 and not is_danger_list[d_start - 1]:
+                tau_temporal = min(0.98, duration_sec / 1.0)
+            else:
+                tau_temporal = 0.5 * min(0.95, duration_sec / 1.0)
+        else:
+            # 줄무늬 패턴 / 고대비 기준: 0.5초 지속 또는 1초 내 4회 점멸
+            tau_dur = duration_sec / 0.5
+            m_pairs = min(3.0, pair_counts.get(run_idx, 0.5))
+            tau_flash = m_pairs / 4.0
+            tau_temporal = min(0.98, max(tau_dur, tau_flash))
+
+        for t in range(d_start, d_end + 1):
+            if in_confirmed[t]:
+                continue
+            p_sp = max(50.0, min(99.9, float(spatial_prob1_list[t])))
+            eta_video = tau_temporal * math.sqrt(p_sp / 100.0)
+            p_video = (eta_video ** 2 / (1.0 + eta_video ** 2)) * 100.0
+            out_prob1[t] = min(49.9, p_video)
+
+    return out_prob1.tolist()
+
+
 def detect_all_trigger_intervals(
     history: dict,
     fps: float,
     max_safe_gap_ms: float = 334.0,
+    apply_temporal_prob1: bool = True,
 ) -> tuple[dict[str, list[tuple[int, int]]], list[tuple[str, list[bool], list[float], list[tuple[int, int]]]]]:
     """
     프레임별 5대 위험 지표 기록(history)으로부터 5대 트리거 각각의 위험 구간을 일괄 검출하여
     (trigger_intervals 딕셔너리, trigger_specs 리스트) 튜플로 반환합니다. (공용 함수)
+    - apply_temporal_prob1=True (기본값): 영상의 시계열 조건(점멸 횟수·지속 시간) 달성률을 통합하여
+      최종 위험 구간 내부는 연속적인 >= 50%, 시간 조건 미달 구간은 < 50%가 되도록 prob1을 정규화합니다.
+    - apply_temporal_prob1=False (Safe 비교 버전용): 단일 프레임 공간 기준 prob1을 그대로 유지합니다.
     """
     trigger_intervals = {
         "휘도 플래시": detect_flashing_intervals(
-            history["lum_flash_danger"], fps=fps, min_pairs=4, max_safe_gap_ms=max_safe_gap_ms
+            history["lum_flash_danger"], fps=fps, min_pairs=3, max_safe_gap_ms=max_safe_gap_ms
         ),
         "적색 플래시": detect_flashing_intervals(
-            history["red_flash_danger"], fps=fps, min_pairs=4, max_safe_gap_ms=max_safe_gap_ms
+            history["red_flash_danger"], fps=fps, min_pairs=3, max_safe_gap_ms=max_safe_gap_ms
         ),
         "지속 플래시": detect_sustained_flash_intervals(
             history["sustained_danger"], fps=fps, min_duration_sec=1.0
@@ -599,6 +748,28 @@ def detect_all_trigger_intervals(
             history["hc_danger"], fps=fps, min_duration_sec=0.5, min_pairs=4, max_safe_gap_ms=max_safe_gap_ms
         ),
     }
+
+    if apply_temporal_prob1:
+        history["lum_flash_prob1"] = compute_video_temporal_prob1_series(
+            history["lum_flash_danger"], history["lum_flash_prob1"],
+            trigger_intervals["휘도 플래시"], fps=fps, trigger_type="flash_3", max_safe_gap_ms=max_safe_gap_ms
+        )
+        history["red_flash_prob1"] = compute_video_temporal_prob1_series(
+            history["red_flash_danger"], history["red_flash_prob1"],
+            trigger_intervals["적색 플래시"], fps=fps, trigger_type="flash_3", max_safe_gap_ms=max_safe_gap_ms
+        )
+        history["sustained_prob1"] = compute_video_temporal_prob1_series(
+            history["sustained_danger"], history["sustained_prob1"],
+            trigger_intervals["지속 플래시"], fps=fps, trigger_type="sustained_1s", max_safe_gap_ms=max_safe_gap_ms
+        )
+        history["stripe_prob1"] = compute_video_temporal_prob1_series(
+            history["stripe_danger"], history["stripe_prob1"],
+            trigger_intervals["줄무늬 패턴"], fps=fps, trigger_type="pattern_or_hc", max_safe_gap_ms=max_safe_gap_ms
+        )
+        history["hc_prob1"] = compute_video_temporal_prob1_series(
+            history["hc_danger"], history["hc_prob1"],
+            trigger_intervals["고대비"], fps=fps, trigger_type="pattern_or_hc", max_safe_gap_ms=max_safe_gap_ms
+        )
 
     trigger_specs = [
         ("휘도 플래시", history["lum_flash_danger"], history["lum_flash_prob1"], trigger_intervals["휘도 플래시"]),
@@ -651,12 +822,15 @@ def analyze_video_frames(
     max_safe_gap_ms: float = 334.0,
     scan_cache: dict | None = None,
     return_physical_stats: bool = False,
+    apply_temporal_prob1: bool = True,
 ) -> dict:
     """
     [공통 동영상 분석 파이프라인 (vdcoreops_v2 / dsbuilder_v2 / fullscreen_coreops_1108 공용)]
     동영상을 단 1회 열어 모든 프레임의 5대 위험 지표를 평가하고 시계열 위험 구간을 검출합니다.
     - scan_cache가 주어지면 동일 해상도의 시야각/스캔라인 좌표를 재사용합니다.
     - return_physical_stats=True이면 1108 화면 밝기 보정용 물리 휘도 통계까지 한 번에 추출합니다.
+    - apply_temporal_prob1=True(기본값)이면 시계열 조건이 통합된 영상 기준 prob1을 산출하며,
+      2패스 무보정 프레임 재사용 및 Safe 버전 호환을 위해 단일 프레임 원본 기록(raw_history)도 함께 보존합니다.
     """
     cap, meta = open_video_and_get_info(video_path, max_side=max_side)
     proc_w, proc_h = meta["proc_w"], meta["proc_h"]
@@ -683,7 +857,7 @@ def analyze_video_frames(
         "hc_danger": [], "hc_prob1": [],
     }
     frame_stats = []
-    max_prob1_per_frame = []
+    single_frame_max_prob1 = []
 
     actual_frames = 0
     while True:
@@ -707,14 +881,14 @@ def analyze_video_frames(
 
         if return_physical_stats:
             frame_stats.append(res["physical_stats"])
-            max_p1 = max(
-                res["lum_flash_prob1"],
-                res["red_flash_prob1"],
-                res["sustained_prob1"],
-                res["stripe_prob1"],
-                res["hc_prob1"],
-            )
-            max_prob1_per_frame.append(float(max_p1))
+        max_p1_sf = max(
+            res["lum_flash_prob1"],
+            res["red_flash_prob1"],
+            res["sustained_prob1"],
+            res["stripe_prob1"],
+            res["hc_prob1"],
+        )
+        single_frame_max_prob1.append(float(max_p1_sf))
 
         actual_frames += 1
 
@@ -724,19 +898,41 @@ def analyze_video_frames(
         meta["total_frames"] = actual_frames
         meta["duration_sec"] = actual_frames / float(fps)
 
+    # 단일 프레임 공간 지표 사본 보존 (2패스 재사용 및 Safe 버전용)
+    raw_history = {k: list(v) for k, v in history.items()}
+
     trigger_intervals, trigger_specs = detect_all_trigger_intervals(
-        history=history, fps=fps, max_safe_gap_ms=max_safe_gap_ms
+        history=history,
+        fps=fps,
+        max_safe_gap_ms=max_safe_gap_ms,
+        apply_temporal_prob1=apply_temporal_prob1,
     )
+
+    if apply_temporal_prob1:
+        max_prob1_per_frame = [
+            float(max(
+                history["lum_flash_prob1"][i],
+                history["red_flash_prob1"][i],
+                history["sustained_prob1"][i],
+                history["stripe_prob1"][i],
+                history["hc_prob1"][i],
+            ))
+            for i in range(actual_frames)
+        ]
+    else:
+        max_prob1_per_frame = single_frame_max_prob1
 
     return {
         "meta": meta,
         "cpd_spec": cpd_spec,
         "scan_lines": scan_lines,
         "history": history,
+        "raw_history": raw_history,
         "trigger_intervals": trigger_intervals,
         "trigger_specs": trigger_specs,
         "frame_stats": frame_stats,
         "max_prob1_per_frame": max_prob1_per_frame,
+        "single_frame_max_prob1": single_frame_max_prob1,
     }
 
 
