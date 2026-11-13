@@ -13,10 +13,10 @@ lumi-lab-rockrovks/
 ├── ImageDiscriminator/                  # 영상 알고리즘 개발을 위한 초기 단계
 │   ├── image_discriminator_1.ipynb
 │   └── image_discriminator_2_adstripe.ipynb
-├── VideoDiscriminator/                  # 동영상 5대 위험 트리거 판별 및 데이터셋 빌더
-│   ├── vdcoreops_v1.py                  # [핵심 엔진] 물리 휘도·시야각 변환 및 5대 위험 구간 판별 모듈
-│   ├── runvd_v1.py                      # [단일 실행] 개별 동영상 1개 빠른 판별 실행 스크립트
-│   ├── dsbuilder_v1.py                  # [배치 실행] 다수 동영상 자동 판별 및 딥러닝용 CSV 라벨 생성기
+├── VideoDiscriminator/                  # 동영상 5대 위험 트리거 판별 및 데이터셋 빌더 초기 단계
+│   ├── vdcoreops_v1.py                  
+│   ├── runvd_v1.py                      
+│   ├── dsbuilder_v1.py                  
 │   ├── video_discriminator_1.ipynb
 │   └── video_discriminator_2.ipynb
 ├── requirements.txt                     # 가상환경 패키지 의존성 목록 (PyTorch CUDA 12.8 포함)
