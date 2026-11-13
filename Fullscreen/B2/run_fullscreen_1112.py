@@ -1,3 +1,5 @@
+# B2 전체화면+적색 분리 보정 실행 예시 (모드: base | hold | safe | all, 적색모드: hybrid | abs)
+# python Fullscreen\B2\run_fullscreen_1112.py --video <입력영상경로> --output-dir <출력폴더경로> --mode base --no-show
 """Unified CLI & 5-Panel Comparison Plot Runner for LUMI B2 Full-Screen + Red-Channel Dimming (`run_fullscreen_1112.py`).
 
 Supports all three B2 scheduling modes (`base`, `hold`, `safe`, or `all` to run all three)

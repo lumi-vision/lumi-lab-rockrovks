@@ -1,11 +1,11 @@
-# B2 보정 실행 (기본형: base, 전체 모드: all)
-#python Fullscreen\B2\run_fullscreen_1112.py --video <입력영상경로> --output-dir <출력폴더경로> --mode base
+# B2 전체화면 보정 실행 (기본형: base, 전체 모드: all)
+# python Fullscreen\B2\run_fullscreen_1112.py --video <입력영상경로> --output-dir <출력폴더경로> --mode base --no-show
 
 # 단일 영상 위험도 진단
-#python Fullscreen\B2\runvd.py <입력영상경로> --out-dir <출력폴더경로>
+# python Fullscreen\B2\runvd.py <입력영상경로> --out-dir <출력폴더경로>
 
 # 데이터셋 일괄 라벨링 CSV 생성
-#python Fullscreen\B2\dsbuilder.py --input-dir <영상폴더경로> --output-dir <CSV저장폴더경로>
+# python Fullscreen\B2\dsbuilder.py --input-dir <영상폴더경로> --output-dir <CSV저장폴더경로>
 
 """Batch dataset PSE auto-labeling builder (`dsbuilder.py`).
 

@@ -9,17 +9,31 @@
 ```text
 lumi-lab-rockrovks/
 ├── data/
-│   └── PSE_triggering_dataset/          # 테스트 및 라벨링 대상 원본 동영상 데이터셋
-├── ImageDiscriminator/                  # 영상 알고리즘 개발을 위한 초기 단계
+│   └── PSE_triggering_dataset/              # 원본 동영상 데이터셋
+├── ImageDiscriminator/                      # 이미지 기반 알고리즘 개발을 위한 초기 단계
 │   ├── image_discriminator_1.ipynb
 │   └── image_discriminator_2_adstripe.ipynb
-├── VideoDiscriminator/                  # 동영상 5대 위험 트리거 판별 및 데이터셋 빌더
-│   ├── vdcoreops_v1.py                  # [핵심 엔진] 물리 휘도·시야각 변환 및 5대 위험 구간 판별 모듈
-│   ├── runvd_v1.py                      # [단일 실행] 개별 동영상 1개 빠른 판별 실행 스크립트
-│   ├── dsbuilder_v1.py                  # [배치 실행] 다수 동영상 자동 판별 및 딥러닝용 CSV 라벨 생성기
-│   ├── video_discriminator_1.ipynb
-│   └── video_discriminator_2.ipynb
-├── requirements.txt                     # 가상환경 패키지 의존성 목록 (PyTorch CUDA 12.8 포함)
+├── VideoDiscriminator/                      # 동영상 5대 위험 트리거 판별 알고리즘 초기 단계
+│   ├── vdcoreops_v1.py                 
+│   ├── runvd_v1.py                       
+│   └── dsbuilder_v1.py                    
+├── Fullscreen/                              # 전체 화면(Fullscreen) 및 부분 감광(Partial) 밝기 보정 · 폐루프 검증 모듈
+│   ├── A1/                                  # [A1] 물리 휘도 안전 상한(18 cd/m²) 기반 전체 화면 & 부분 감광 보정 (1112)
+│   │   ├── vdcorefs/                        # [핵심 엔진] 7대 위험 구간 및 4대 연속 위험도 지표 분석 패키지
+│   │   ├── vdcoreps/                        # [마스크 엔진] 픽셀 단위 위험 영역 국소화 및 시공간 소프트 마스크 생성 패키지
+│   │   ├── fullscreen_coreops_1112.py       # [보정 엔진] A1 전체 화면 균일 선형 감쇠(base/hold/safe 통합) 모듈
+│   │   ├── run_fullscreen_1112.py           # [단일 실행] A1 전체 화면 보정 영상(.mp4) 및 4단 그래프(.png) 생성
+│   │   ├── partial_coreops_1112.py          # [보정 엔진] A1 시공간 부분 감광(수식 A · 잔여 구간 0 보장) 모듈
+│   │   ├── run_partial_1112.py              # [단일 실행] A1 부분 감광 보정 영상(.mp4) 및 4단 그래프(.png) 생성
+│   │   ├── runvd.py                         # [단일 실행] 개별 동영상 7대 트리거·4대 연속 지표 진단 및 CSV/그래프 출력
+│   │   └── dsbuilder.py                     # [배치 실행] 다수 동영상 자동 진단 및 4대 연속 지표 포함 CSV 생성기
+│   └── B2/                                  # [B2] 7대 트리거·4대 연속 지표 기반 위험도 비례 & 적색 분리 보정 (1112)
+│       ├── vdcorefs/                        # [핵심 엔진] 7대 위험 구간 및 4대 연속 위험도 지표 분석 패키지
+│       ├── fullscreen_coreops_1112.py       # [보정 엔진] risk_calibrated 비례 + 적색 분리(base/hold/safe 통합) 모듈
+│       ├── run_fullscreen_1112.py           # [단일 실행] B2 모드별(base/hold/safe/all) 보정 영상 및 5단 그래프 생성
+│       ├── runvd.py                         # [단일 실행] 개별 동영상 7대 트리거·4대 연속 지표 진단 및 CSV/그래프 출력
+│       └── dsbuilder.py                     # [배치 실행] 다수 동영상 자동 진단 및 4대 연속 지표 포함 CSV 생성기
+├── requirements.txt                         # 가상환경 패키지 의존성 목록 (PyTorch CUDA 12.8 포함)
 └── README.md
 ```
 <sub>* `.ipynb` 파일들은 초기 개발 단계 과정에서의 체크포인트입니다.</sub>

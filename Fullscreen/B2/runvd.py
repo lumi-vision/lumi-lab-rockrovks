@@ -1,3 +1,6 @@
+# 단일 영상 7대 트리거·4대 연속 위험도 진단 실행 예시
+# python Fullscreen\B2\runvd.py <입력영상경로> --out-dir <출력폴더경로>
+
 """Single-video PSE inspection, CSV export, and time-series visualization (`runvd.py`).
 
 Uses the `vdcorefs` package to evaluate a single video against the 7 structured PSE hazard
